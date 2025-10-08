@@ -1,0 +1,34 @@
+openapi: 3.0.3
+info:
+  title: ERA Docker Secure List API
+  version: 1.0.0
+servers:
+  - url: https://api.exemplo.com
+paths:
+  /v1/containers:
+    get:
+      summary: Lista containers Docker (id e nome)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+        '401': { description: Unauthorized }
+        '403': { description: Forbidden }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
