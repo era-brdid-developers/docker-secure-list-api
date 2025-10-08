@@ -135,6 +135,7 @@ fi
 
 # Instalar dependências
 log_info "Instalando dependências npm..."
+export NODE_OPTIONS=--dns-result-order=ipv4first
 npm install --omit=dev --silent 2>/dev/null || npm install --omit=dev
 log_success "Dependências instaladas ✓"
 
