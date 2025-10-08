@@ -28,7 +28,7 @@ log_error() {
 echo -e "${BLUE}"
 cat << "EOF"
 ╔════════════════════════════════════════════════╗
-║   Docker Secure List API - Instalador v2.0    ║
+║   Docker Secure List API - Instalador v2.1    ║
 ╚════════════════════════════════════════════════╝
 EOF
 echo -e "${NC}"
@@ -39,6 +39,10 @@ if [ ! -f "package.json" ] || [ ! -d "src" ]; then
     log_info "Certifique-se de que package.json e a pasta src/ existem"
     exit 1
 fi
+
+# Obter caminho absoluto do projeto
+PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SERVICE_NAME="docker-secure-list-api"
 
 log_info "Verificando dependências do sistema..."
 
@@ -55,7 +59,7 @@ if [ "$NODE_VERSION" -lt 18 ]; then
     log_info "É necessário Node.js 18 ou superior"
     exit 1
 fi
-log_success "Node.js v$(node -v) ✓"
+log_success "Node.js $(node -v) ✓"
 
 # Verificar npm
 if ! command -v npm &> /dev/null; then
@@ -151,20 +155,115 @@ EOF
     log_success "Script start.sh criado"
 fi
 
+# ===== CONFIGURAÇÃO DO SYSTEMD =====
+log_info "Configurando serviço systemd..."
+
+# Criar arquivo de serviço
+SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+
+# Detectar arquivo principal (server.js ou index.js)
+MAIN_FILE="src/server.js"
+if [ ! -f "$PROJECT_DIR/$MAIN_FILE" ]; then
+    if [ -f "$PROJECT_DIR/src/index.js" ]; then
+        MAIN_FILE="src/index.js"
+    elif [ -f "$PROJECT_DIR/index.js" ]; then
+        MAIN_FILE="index.js"
+    else
+        log_error "Não foi possível encontrar o arquivo principal!"
+        log_info "Verifique se existe: src/server.js, src/index.js ou index.js"
+        exit 1
+    fi
+fi
+
+log_info "Arquivo principal detectado: $MAIN_FILE"
+
+sudo tee "$SERVICE_FILE" > /dev/null << EOF
+[Unit]
+Description=Docker Secure List API
+Documentation=https://github.com/seu-repo/docker-secure-list-api
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=$PROJECT_DIR
+Environment="NODE_ENV=production"
+Environment="PATH=/usr/bin:/usr/local/bin"
+ExecStart=$(which node) $PROJECT_DIR/$MAIN_FILE
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=${SERVICE_NAME}
+
+# Segurança
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Limites
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+log_success "Arquivo de serviço criado: $SERVICE_FILE"
+
+# Recarregar systemd
+log_info "Recarregando systemd..."
+sudo systemctl daemon-reload
+log_success "Systemd recarregado ✓"
+
+# Habilitar serviço para iniciar no boot
+log_info "Habilitando serviço para iniciar automaticamente..."
+sudo systemctl enable "$SERVICE_NAME"
+log_success "Serviço habilitado para iniciar no boot ✓"
+
+# Verificar se o serviço já está rodando e reiniciar, ou iniciar se não estiver
+echo ""
+if sudo systemctl is-active --quiet "$SERVICE_NAME"; then
+    log_info "Serviço já está rodando. Reiniciando..."
+    sudo systemctl restart "$SERVICE_NAME"
+    sleep 2
+    
+    if sudo systemctl is-active --quiet "$SERVICE_NAME"; then
+        log_success "Serviço reiniciado com sucesso! ✓"
+    else
+        log_error "Falha ao reiniciar o serviço"
+        log_info "Verifique os logs com: sudo journalctl -u $SERVICE_NAME -n 50"
+    fi
+else
+    log_info "Iniciando serviço..."
+    sudo systemctl start "$SERVICE_NAME"
+    sleep 2
+    
+    if sudo systemctl is-active --quiet "$SERVICE_NAME"; then
+        log_success "Serviço iniciado com sucesso! ✓"
+    else
+        log_error "Falha ao iniciar o serviço"
+        log_info "Verifique os logs com: sudo journalctl -u $SERVICE_NAME -n 50"
+    fi
+fi
+
 # Resumo final
 echo ""
 echo -e "${GREEN}╔════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║          Instalação Concluída!                 ║${NC}"
 echo -e "${GREEN}╚════════════════════════════════════════════════╝${NC}"
 echo ""
-log_warning "PRÓXIMOS PASSOS:"
+log_warning "CONFIGURAÇÃO IMPORTANTE:"
 echo "  1. Edite o arquivo .env e configure CORS_ORIGINS"
-echo "  2. Se necessário, execute: newgrp docker"
-echo "  3. Inicie a API: npm start"
-echo "  4. Ou use: ./start.sh"
+echo "  2. Após editar, reinicie: sudo systemctl restart $SERVICE_NAME"
+echo ""
+log_info "COMANDOS ÚTEIS:"
+echo "  • Iniciar:    sudo systemctl start $SERVICE_NAME"
+echo "  • Parar:      sudo systemctl stop $SERVICE_NAME"
+echo "  • Reiniciar:  sudo systemctl restart $SERVICE_NAME"
+echo "  • Status:     sudo systemctl status $SERVICE_NAME"
+echo "  • Logs:       sudo journalctl -u $SERVICE_NAME -f"
+echo "  • Desabilitar boot: sudo systemctl disable $SERVICE_NAME"
 echo ""
 log_info "Teste o healthcheck:"
 echo "  curl http://localhost:4000/healthz"
-echo ""
-log_info "Documentação: README.md"
 echo ""
