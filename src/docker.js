@@ -237,3 +237,12 @@ export async function pm2StartEcosystem(docker, containerId, ecosystemPath) {
 
 
 
+export async function pm2RestartApp(docker, containerId, appName) {
+  const output = await execInContainer(docker, containerId, [
+    "pm2",
+    "restart",
+    appName,
+    "--no-color"
+  ]);
+  return output.trim();
+}
