@@ -15,7 +15,8 @@ import {
   getContainerStats,
   updateContainerMemory,
   putFileInContainer,
-  pm2StartEcosystem
+  pm2StartEcosystem,
+  pm2RestartApp
 } from "./docker.js";
 
 const app = express();
@@ -207,6 +208,18 @@ app.post("/v1/containers/:id/pm2/ecosystem/start", auth, async (req, res) => {
     return res.json({ ok: true, path: inContainerPath, output });
   } catch (e) {
     return res.status(500).json({ error: "pm2_start_error", details: e.message });
+  }
+});
+
+
+// Exemplo de uso: POST /v1/containers/94e010669ad7/pm2/restart/app.chat
+app.post("/v1/containers/:id/pm2/restart/:appName", auth, async (req, res) => {
+  const { id, appName } = req.params;
+  try {
+    const output = await pm2RestartApp(docker, id, appName);
+    res.json({ output });
+  } catch (e) {
+    res.status(500).json({ error: e.message || "pm2_restart_error" });
   }
 });
 
