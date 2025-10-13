@@ -10,7 +10,7 @@ import {
   pm2Status,
   restartContainers,
   pm2RestartAll,
-  pm2LogsContains
+  // pm2LogsContains
 } from "./docker.js";
 
 const app = express();
@@ -73,20 +73,20 @@ app.post("/v1/containers/:id/pm2/restart", auth, async (req, res) => {
 });
 
 
-app.get(
-  "/v1/containers/:id/pm2/logs/redis-error",
-  auth,
-  async (req, res) => {
-    const { id } = req.params;
-    try {
-      const search = "Redis Client Error Error: getaddrinfo ENOTFOUND redis";
-      const found = await pm2LogsContains(docker, id, search);
-      res.json({ found });
-    } catch (e) {
-      res.status(500).json({ error: e.message || "pm2_logs_error" });
-    }
-  }
-);
+// app.get(
+// "/v1/containers/:id/pm2/logs/redis-error",
+  // auth,
+  // async (req, res) => {
+    // const { id } = req.params;
+    // try {
+      // const search = "Redis Client Error Error: getaddrinfo ENOTFOUND redis";
+      // const found = await pm2LogsContains(docker, id, search);
+      // res.json({ found });
+    // } catch (e) {
+      // res.status(500).json({ error: e.message || "pm2_logs_error" });
+    // }
+  // }
+// );
 
 const port = Number(process.env.PORT || 3000);
 app.listen(port, () => console.log(`API segura ouvindo em :${port}`));
