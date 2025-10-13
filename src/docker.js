@@ -1,4 +1,10 @@
 import Docker from "dockerode";
+import { exec as execCb } from "child_process";
+import { promises as fs } from "fs";
+import { promisify } from "util";
+import crypto from "crypto";
+
+const exec = promisify(execCb);
 
 /** Mantém o código existente… */
 export function makeDocker(env) {
@@ -125,3 +131,109 @@ export async function pm2LogsContains(docker, containerId, searchString) {
     });
   });
 }
+
+// src/docker.js
+/**
+ * Devolve as estatísticas de uso de recursos de um contêiner (CPU, memória etc.).
+ * Usa a API do Docker com stream:false para retornar apenas um snapshot.
+ */
+// docker.js
+
+/**
+ * Devolve as estatísticas de uso de recursos de um contêiner (CPU, memória etc.).
+ * Usa a API do Docker com stream:false para retornar apenas um snapshot.
+ */
+export async function getContainerStats(docker, containerId) {
+  const container = docker.getContainer(containerId);
+  // Pede um snapshot (stream:false)
+  const data = await container.stats({ stream: false });
+
+  // Se vier como Buffer, converte para string e parseia; caso contrário, retorna direto
+  if (Buffer.isBuffer(data)) {
+    return JSON.parse(data.toString());
+  } else {
+    return data;
+  }
+}
+
+
+// src/docker.js
+
+/**
+ * Converte valores de memória com sufixo (m/M, g/G, k/K) em bytes.
+ * Aceita números simples (assumidos como bytes) ou strings tipo "4g", "512m".
+ */
+function parseMemory(value) {
+  if (typeof value === "number") return value;
+  const match = /^([0-9.]+)\s*([kKmMgG])?/.exec(String(value).trim());
+  if (!match) throw new Error("Invalid memory format");
+  const num = parseFloat(match[1]);
+  const unit = match[2]?.toLowerCase();
+  switch (unit) {
+    case "g":
+      return Math.round(num * 1024 ** 3);
+    case "m":
+      return Math.round(num * 1024 ** 2);
+    case "k":
+      return Math.round(num * 1024);
+    default:
+      // sem sufixo assume bytes
+      return Math.round(num);
+  }
+}
+
+/**
+ * Atualiza os limites de memória de um contêiner.
+ * `memory` e `memorySwap` podem ser strings como "4g", "512m" ou números em bytes.
+ * Se `memorySwap` não for fornecido, assume o mesmo valor de `memory`.
+ */
+export async function updateContainerMemory(docker, containerId, memory, memorySwap) {
+  const container = docker.getContainer(containerId);
+  const memBytes = parseMemory(memory);
+  const swapBytes = parseMemory(memorySwap ?? memory);
+  // a API de update espera valores em bytes
+  await container.update({
+    Memory: memBytes,
+    MemorySwap: swapBytes
+  });
+  return { id: containerId, memory: memBytes, memorySwap: swapBytes };
+}
+
+
+/**
+ * Envia um arquivo para dentro do container usando apenas o binário `tar`.
+ * Gera nomes únicos em /tmp para evitar colisões entre chamadas paralelas.
+ */
+export async function putFileInContainer(docker, containerId, destPath, filename, contentBuffer) {
+  const safeId = containerId.slice(0, 12);
+  const unique = crypto.randomBytes(4).toString("hex");
+  const tmpDir = `/tmp/docker-upload-${safeId}-${unique}`;
+  const tmpFile = `${tmpDir}/${filename}`;
+  const tmpTar  = `${tmpDir}.tar`;
+
+  try {
+    await fs.mkdir(tmpDir, { recursive: true });
+    await fs.writeFile(tmpFile, contentBuffer);
+
+    // Cria o TAR contendo apenas esse arquivo
+    await exec(`tar -C ${tmpDir} -cf ${tmpTar} ${filename}`);
+
+    const tarData = await fs.readFile(tmpTar);
+    const container = docker.getContainer(containerId);
+    await container.putArchive(tarData, { path: destPath.replace(/\/+$/, "") });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+    await fs.rm(tmpTar, { force: true });
+  }
+}
+
+/** Executa `pm2 start <ecosystemPath>` dentro do container */
+export async function pm2StartEcosystem(docker, containerId, ecosystemPath) {
+  const output = await execInContainer(docker, containerId, [
+    "pm2", "start", ecosystemPath, "--no-color"
+  ]);
+  return output.trim();
+}
+
+
+
