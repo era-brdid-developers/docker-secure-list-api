@@ -17,7 +17,9 @@ import {
   putFileInContainer,
   pm2StartEcosystem,
   pm2RestartApp,
-  getCertDetails
+  getCertDetails,
+  pm2Resurrect,
+  getContainerImage
 } from "./docker.js";
 
 const app = express();
@@ -235,6 +237,30 @@ app.get("/v1/containers/:id/cert-details", auth, async (req, res) => {
     res.json(info);
   } catch (e) {
     res.status(500).json({ error: e.message || "cert_details_error" });
+  }
+});
+
+// Executa `pm2 resurrect` dentro do contêiner especificado
+// Exemplo de uso: POST /v1/containers/<id>/pm2/resurrect
+app.post("/v1/containers/:id/pm2/resurrect", auth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const output = await pm2Resurrect(docker, id);
+    res.json({ output });
+  } catch (e) {
+    res.status(500).json({ error: e.message || "pm2_resurrect_error" });
+  }
+});
+
+// Retorna apenas o nome da imagem usada pelo contêiner (sem usar inspect)
+// Exemplo: GET /v1/containers/<id>/image
+app.get("/v1/containers/:id/image", auth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const image = await getContainerImage(docker, id);
+    res.json({ image });
+  } catch (e) {
+    res.status(500).json({ error: e.message || "get_image_error" });
   }
 });
 
