@@ -299,3 +299,37 @@ export async function getCertExpiry(docker, containerId, certPath) {
   if (!match) throw new Error("invalid_cert_output");
   return match[1].trim();
 }
+
+
+/**
+ * Restaura todos os processos gerenciados pelo PM2 a partir de um dump salvo (pm2 resurrect).
+ * Executa `pm2 resurrect` dentro do contêiner e retorna a saída do comando.
+ *
+ * @param {Docker} docker Instância do cliente Docker
+ * @param {string} containerId ID do contêiner onde o PM2 está rodando
+ * @returns {Promise<string>} Saída textual da execução do comando
+ */
+export async function pm2Resurrect(docker, containerId) {
+  const output = await execInContainer(docker, containerId, [
+    "pm2",
+    "resurrect",
+    "--no-color"
+  ]);
+  return output.trim();
+}
+
+
+/**
+ * Obtém o nome da imagem (repositório:tag) de um contêiner sem usar `docker inspect`.
+ * @param {Docker} docker Instância do cliente Docker
+ * @param {string} containerId ID (ou prefixo único) do contêiner
+ * @returns {Promise<string>} Nome da imagem do contêiner
+ */
+export async function getContainerImage(docker, containerId) {
+  const containers = await docker.listContainers({
+    all: true,
+    filters: { id: [containerId] }
+  });
+  if (!containers.length) throw new Error("container_not_found");
+  return containers[0].Image;
+}
