@@ -16,7 +16,8 @@ import {
   updateContainerMemory,
   putFileInContainer,
   pm2StartEcosystem,
-  pm2RestartApp
+  pm2RestartApp,
+  getCertDetails
 } from "./docker.js";
 
 const app = express();
@@ -223,6 +224,19 @@ app.post("/v1/containers/:id/pm2/restart/:appName", auth, async (req, res) => {
   }
 });
 
+
+// Retorna data de expiração, CN e flag de validade do certificado
+// Exemplo: GET /v1/containers/:id/cert-details?path=/etc/nginx/myuc2b.com.crt
+app.get("/v1/containers/:id/cert-details", auth, async (req, res) => {
+  const { id } = req.params;
+  const certPath = req.query.path || "/etc/nginx/myuc2b.com.crt";
+  try {
+    const info = await getCertDetails(docker, id, certPath);
+    res.json(info);
+  } catch (e) {
+    res.status(500).json({ error: e.message || "cert_details_error" });
+  }
+});
 
 const port = Number(process.env.PORT || 3000);
 app.listen(port, () => console.log(`API segura ouvindo em :${port}`));
