@@ -246,3 +246,56 @@ export async function pm2RestartApp(docker, containerId, appName) {
   ]);
   return output.trim();
 }
+
+
+/**
+ * Obtém dados de um certificado X.509: data de expiração, CN e se está válido.
+ * @param {Docker} docker - Cliente Docker
+ * @param {string} containerId - ID do contêiner
+ * @param {string} certPath - Caminho do .crt no contêiner
+ * @returns {Promise<{expiresAt: string, subjectCN: string, isValid: boolean}>}
+ */
+export async function getCertDetails(docker, containerId, certPath) {
+  // 1) Data de expiração (reaproveita getCertExpiry)
+  const expiryStr = await getCertExpiry(docker, containerId, certPath);
+  const expiryDate = new Date(expiryStr);
+  const now = new Date();
+  const isValid = !isNaN(expiryDate) && expiryDate > now;
+
+  // 2) Extrai o CN do subject
+  const subjectOutput = await execInContainer(docker, containerId, [
+    "openssl",
+    "x509",
+    "-subject",
+    "-noout",
+    "-in",
+    certPath
+  ]);
+  let cn = "";
+const m1 = subjectOutput.match(/CN\s*=\s*([^,\/]*)/);
+if (m1 && m1[1]) {
+  cn = m1[1].trim();
+} else {
+  // tenta formato /CN=meu.dominio/OU=...
+  const m2 = subjectOutput.match(/\/CN=([^\/]+)/);
+  if (m2 && m2[1]) {
+    cn = m2[1].trim();
+  }
+}
+
+  return { expiresAt: expiryStr, subjectCN: cn, isValid };
+}
+
+export async function getCertExpiry(docker, containerId, certPath) {
+  const output = await execInContainer(docker, containerId, [
+    "openssl",
+    "x509",
+    "-enddate",
+    "-noout",
+    "-in",
+    certPath
+  ]);
+  const match = output.match(/notAfter=(.*)/);
+  if (!match) throw new Error("invalid_cert_output");
+  return match[1].trim();
+}
