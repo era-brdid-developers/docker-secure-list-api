@@ -325,11 +325,37 @@ export async function pm2Resurrect(docker, containerId) {
  * @param {string} containerId ID (ou prefixo único) do contêiner
  * @returns {Promise<string>} Nome da imagem do contêiner
  */
-export async function getContainerImage(docker, containerId) {
-  const containers = await docker.listContainers({
-    all: true,
-    filters: { id: [containerId] }
-  });
-  if (!containers.length) throw new Error("container_not_found");
-  return containers[0].Image;
+export async function getContainerImageTag(docker, containerId) {
+  const container = docker.getContainer(containerId);
+  const info = await container.inspect();
+
+  const imageId = info.Image; // ID SHA256 da imagem (com prefixo "sha256:")
+
+  try {
+    const images = await docker.listImages();
+    
+    // Procura a imagem pelo ID, considerando que pode vir com ou sem prefixo
+    const matchedImage = images.find(img => 
+      img.Id === imageId || img.Id.endsWith(imageId.replace("sha256:", ""))
+    );
+
+    if (matchedImage?.RepoTags?.[0]) {
+      const [repository, tag] = matchedImage.RepoTags[0].split(":");
+      return {
+        image: repository + ":" + tag,
+        tag: tag || "latest"
+      };
+    }
+  } catch (error) {
+    console.error("Erro ao listar imagens Docker:", error);
+  }
+
+  // Fallback: tenta extrair do Config.Image
+  const fullImage = info.Config?.Image || "";
+  const [repository, tag] = fullImage.split(":");
+
+  return {
+    image: repository,
+    tag: tag || "latest"
+  };
 }
