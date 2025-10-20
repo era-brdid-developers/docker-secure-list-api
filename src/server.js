@@ -19,7 +19,7 @@ import {
   pm2RestartApp,
   getCertDetails,
   pm2Resurrect,
-  getContainerImage
+  getContainerImageTag
 } from "./docker.js";
 
 const app = express();
@@ -254,15 +254,18 @@ app.post("/v1/containers/:id/pm2/resurrect", auth, async (req, res) => {
 
 // Retorna apenas o nome da imagem usada pelo contêiner (sem usar inspect)
 // Exemplo: GET /v1/containers/<id>/image
+// Retorna nome e tag da imagem do container
 app.get("/v1/containers/:id/image", auth, async (req, res) => {
   const { id } = req.params;
   try {
-    const image = await getContainerImage(docker, id);
-    res.json({ image });
+    const result = await getContainerImageTag(docker, id);
+    res.json(result);
   } catch (e) {
-    res.status(500).json({ error: e.message || "get_image_error" });
+    res.status(500).json({ error: e.message || "image_info_error" });
   }
 });
+
+
 
 const port = Number(process.env.PORT || 3000);
 app.listen(port, () => console.log(`API segura ouvindo em :${port}`));
