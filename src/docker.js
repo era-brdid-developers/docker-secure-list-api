@@ -377,10 +377,14 @@ export async function updateDockerInstance(domain) {
       return reject("Credenciais AWS não configuradas no .env");
     }
 
+    // Escapa caracteres especiais para bash usando aspas simples
+    const escapedSecret = awsSecretAccessKey.replace(/'/g, "'\\''");
+    const escapedKey = awsAccessKeyId.replace(/'/g, "'\\''");
+
     const awsAndDockerCmd = `
-      aws configure set aws_access_key_id "${awsAccessKeyId}" &&
-      aws configure set aws_secret_access_key "${awsSecretAccessKey}" &&
-      aws configure set region "${awsRegion}" &&
+      aws configure set aws_access_key_id '${escapedKey}' &&
+      aws configure set aws_secret_access_key '${escapedSecret}' &&
+      aws configure set region '${awsRegion}' &&
       aws ecr get-login-password --region ${awsRegion} | docker login --username AWS --password-stdin ${ecrRegistry} &&
       cd ${instancePath} &&
       docker-compose pull &&
