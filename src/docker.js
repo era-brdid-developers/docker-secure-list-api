@@ -359,3 +359,108 @@ export async function getContainerImageTag(docker, containerId) {
     tag: tag || "latest"
   };
 }
+
+
+export async function updateDockerInstance(domain) {
+  return new Promise((resolve, reject) => {
+    if (!domain) return reject("Domínio não informado.");
+
+    const instancePath = `/instances/${domain}`;
+    
+    // Buscar credenciais do .env
+    const awsAccessKeyId = process.env.AWS_ACCESS_KEY_ID;
+    const awsSecretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+    const awsRegion = process.env.AWS_REGION || "us-west-2";
+    const ecrRegistry = process.env.ECR_REGISTRY;
+
+    if (!awsAccessKeyId || !awsSecretAccessKey || !ecrRegistry) {
+      return reject("Credenciais AWS não configuradas no .env");
+    }
+
+    const awsAndDockerCmd = `
+      aws configure set aws_access_key_id "${awsAccessKeyId}" &&
+      aws configure set aws_secret_access_key "${awsSecretAccessKey}" &&
+      aws configure set region "${awsRegion}" &&
+      aws ecr get-login-password --region ${awsRegion} | docker login --username AWS --password-stdin ${ecrRegistry} &&
+      cd ${instancePath} &&
+      docker-compose pull &&
+      docker-compose down &&
+      docker-compose up -d
+    `;
+
+    exec(awsAndDockerCmd, { shell: "/bin/bash" }, (error, stdout, stderr) => {
+      if (error) {
+        reject(stderr || error.message);
+      } else {
+        resolve(stdout.trim());
+      }
+    });
+  });
+}
+
+/**
+ * Lê conteúdo de um arquivo dentro do container.
+ * @param {Docker} docker - Cliente Docker
+ * @param {string} containerId - ID do container
+ * @param {string} filePath - Caminho completo do arquivo dentro do container
+ * @returns {Promise<string>} Conteúdo do arquivo
+ */
+export async function readFileFromContainer(docker, containerId, filePath) {
+  const output = await execInContainer(docker, containerId, ["cat", filePath]);
+  // Remove todos os caracteres inválidos até encontrar { ou [
+  const cleanOutput = output.replace(/^[\s\S]*?([{\[])/i, "$1");
+  return cleanOutput;
+}
+
+/**
+ * Lê os arquivos versao.json e versao_log.json do container.
+ * @param {Docker} docker - Cliente Docker
+ * @param {string} containerId - ID do container
+ * @returns {Promise<{versao: object, versaoLog: object}>}
+ */
+export async function getVersionFiles(docker, containerId) {
+  const basePath = "/app/app.chat";
+  
+  const versaoPath = `${basePath}/versao.json`;
+  const versaoLogPath = `${basePath}/versao_log.json`;
+
+  try {
+    const versaoContent = await readFileFromContainer(docker, containerId, versaoPath);
+    const versaoLogContent = await readFileFromContainer(docker, containerId, versaoLogPath);
+
+    return {
+      versao: JSON.parse(versaoContent),
+      versaoLog: JSON.parse(versaoLogContent)
+    };
+  } catch (error) {
+    throw new Error(`Failed to read version files: ${error.message}`);
+  }
+}
+
+
+/**
+ * Lê os arquivos versao.json e versao_log.json do host.
+ * @returns {Promise<{versao: object, versaoLog: object}>}
+ */
+export async function getVersionFilesHost() {
+  const basePath = "/home/omni_last_version/git/app.chat";
+  
+  const versaoPath = `${basePath}/versao.json`;
+  const versaoLogPath = `${basePath}/versao_log.json`;
+
+  try {
+    const versaoContent = await fs.readFile(versaoPath, "utf-8");
+    const versaoLogContent = await fs.readFile(versaoLogPath, "utf-8");
+
+    // Remove caracteres inválidos
+    const cleanVersao = versaoContent.replace(/^[\s\S]*?([{\[])/i, "$1");
+    const cleanVersaoLog = versaoLogContent.replace(/^[\s\S]*?([{\[])/i, "$1");
+
+    return {
+      versao: JSON.parse(cleanVersao),
+      versaoLog: JSON.parse(cleanVersaoLog)
+    };
+  } catch (error) {
+    throw new Error(`Failed to read version files from host: ${error.message}`);
+  }
+}
