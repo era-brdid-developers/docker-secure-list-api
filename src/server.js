@@ -19,7 +19,10 @@ import {
   pm2RestartApp,
   getCertDetails,
   pm2Resurrect,
-  getContainerImageTag
+  getContainerImageTag,
+  updateDockerInstance,
+  getVersionFiles,
+  getVersionFilesHost
 } from "./docker.js";
 
 const app = express();
@@ -265,6 +268,37 @@ app.get("/v1/containers/:id/image", auth, async (req, res) => {
   }
 });
 
+
+
+app.post("/v1/containers/:domain/update", async (req, res) => {
+  try {
+    const { domain } = req.params;
+    const log = await updateDockerInstance(domain);
+    res.json({ ok: true, domain, log });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.toString() });
+  }
+});
+
+app.get("/v1/containers/:id/version-files", auth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const files = await getVersionFiles(docker, id);
+    res.json(files);
+  } catch (e) {
+    res.status(500).json({ error: e.message || "version_files_error" });
+  }
+});
+
+
+app.get("/v1/version-files-host", auth, async (req, res) => {
+  try {
+    const files = await getVersionFilesHost();
+    res.json(files);
+  } catch (e) {
+    res.status(500).json({ error: e.message || "version_files_host_error" });
+  }
+});
 
 
 const port = Number(process.env.PORT || 3000);
