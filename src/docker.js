@@ -468,3 +468,118 @@ export async function getVersionFilesHost() {
     throw new Error(`Failed to read version files from host: ${error.message}`);
   }
 }
+
+
+
+
+
+
+
+/**
+ * Encontra um container pelo domain (procura por docker_domain_chat)
+ * @param {Docker} docker - Cliente Docker
+ * @param {string} domain - Domain/nome da instância
+ * @returns {Promise<string>} ID do container (primeiros 12 chars)
+ */
+async function findContainerByDomain(docker, domain) {
+  const containers = await docker.listContainers({ all: true });
+  const containerPattern = `docker_${domain}_chat`;
+  const found = containers.find(c => 
+    c.Names?.some(n => n.replace(/^\//, "") === containerPattern)
+  );
+  if (!found) throw new Error(`Container "${containerPattern}" não encontrado`);
+  return found.Id.slice(0, 12);
+}
+
+/**
+ * Faz update completo com backup e restore de arquivos críticos
+ * @param {Docker} docker - Cliente Docker
+ * @param {string} domain - Domain/nome da instância (ex: chat-testethales.uc2bbh.com.br)
+ * @returns {Promise<{status: string, backupDir: string, log: string}>}
+ */
+export async function updateDockerInstanceWithBackup(docker, domain) {
+  const backupDir = `/tmp/${domain}`;
+  let oldContainerId;
+
+  try {
+    // 1) Encontra o container pelo domain
+    oldContainerId = await findContainerByDomain(docker, domain);
+    console.log(`Container encontrado: ${oldContainerId}`);
+
+    // 2) Cria diretório de backup
+    await exec(`mkdir -p ${backupDir}`);
+    console.log(`Diretório de backup criado: ${backupDir}`);
+
+    // 3) Backup dos 3 arquivos
+    console.log("Iniciando backup dos arquivos...");
+    
+    await exec(`docker cp ${oldContainerId}:/etc/nginx/myuc2b.com.crt ${backupDir}/`);
+    console.log("✓ Certificado (.crt) copiado");
+    
+    await exec(`docker cp ${oldContainerId}:/etc/nginx/myuc2b.com.key ${backupDir}/`);
+    console.log("✓ Chave (.key) copiada");
+    
+    await exec(`docker cp ${oldContainerId}:/app/app.hubot/node_modules/@rocket.chat/sdk/dist/lib/settings.js ${backupDir}/`);
+    console.log("✓ Settings.js copiado");
+
+    // 4) Faz o update
+    console.log("Iniciando atualização do Docker...");
+    const updateLog = await updateDockerInstance(domain);
+    console.log("✓ Update concluído");
+
+    // 5) Encontra o novo container (pode ter mudado de ID)
+    let newContainerId;
+    let retries = 0;
+    while (retries < 10) {
+      try {
+        newContainerId = await findContainerByDomain(docker, domain);
+        break;
+      } catch (e) {
+        retries++;
+        if (retries === 10) throw new Error("Timeout esperando novo container aparecer");
+        await new Promise(r => setTimeout(r, 1000)); // Espera 1s
+      }
+    }
+    console.log(`Novo container encontrado: ${newContainerId}`);
+
+    // 6) Restaura os 3 arquivos
+    console.log("Restaurando arquivos...");
+    
+    await exec(`docker cp ${backupDir}/myuc2b.com.crt ${newContainerId}:/etc/nginx/`);
+    console.log("✓ Certificado restaurado");
+    
+    await exec(`docker cp ${backupDir}/myuc2b.com.key ${newContainerId}:/etc/nginx/`);
+    console.log("✓ Chave restaurada");
+    
+    await exec(`docker cp ${backupDir}/settings.js ${newContainerId}:/app/app.hubot/node_modules/@rocket.chat/sdk/dist/lib/`);
+    console.log("✓ Settings.js restaurado");
+
+    // 7) Reinicia todos os apps
+    console.log("Reiniciando aplicativos...");
+    const restartOutput = await execInContainer(docker, newContainerId, [
+      "pm2",
+      "restart",
+      "all",
+      "--no-color"
+    ]);
+    console.log("✓ PM2 restart executado");
+
+    // 8) Limpeza (opcional - manter backup por segurança)
+    // await exec(`rm -rf ${backupDir}`);
+
+    return {
+      status: "success",
+      oldContainerId,
+      newContainerId,
+      backupDir,
+      domain,
+      message: "Update completo com sucesso",
+      updateLog,
+      restartOutput
+    };
+
+  } catch (error) {
+    console.error("Erro no update:", error.message);
+    throw new Error(`Falha no update: ${error.message}`);
+  }
+}
