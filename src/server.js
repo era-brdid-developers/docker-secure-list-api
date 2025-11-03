@@ -22,7 +22,8 @@ import {
   getContainerImageTag,
   updateDockerInstance,
   getVersionFiles,
-  getVersionFilesHost
+  getVersionFilesHost,
+  updateDockerInstanceWithBackup
 } from "./docker.js";
 
 const app = express();
@@ -297,6 +298,19 @@ app.get("/v1/version-files-host", auth, async (req, res) => {
     res.json(files);
   } catch (e) {
     res.status(500).json({ error: e.message || "version_files_host_error" });
+  }
+});
+
+app.post("/v1/containers/:domain/update-with-backup", auth, async (req, res) => {
+  const { domain } = req.params;
+  try {
+    const result = await updateDockerInstanceWithBackup(docker, domain);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ 
+      ok: false, 
+      error: error.message 
+    });
   }
 });
 
