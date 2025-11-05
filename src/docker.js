@@ -586,75 +586,6 @@ export async function updateDockerInstanceWithBackup(docker, domain) {
 
 
 
-// import { promises as dns } from "dns";
-
-// /**
-//  * Consulta apps configurados no MongoDB dentro do container
-//  * @param {Docker} docker - Cliente Docker
-//  * @param {string} containerId - ID do container
-//  * @returns {Promise<Array>} Array de apps com DNS resolvido
-//  */
-// export async function getContainerAppsConfig(docker, containerId) {
-//   // 1) Executa a query no MongoDB
-//   const mongoQuery = `
-//     use mytuite;
-//     db.mytuite_apps.find(
-//       {},
-//       {
-//         "configs.Chat_Domain_Uuid": 1,
-//         "configs.Chat_Domain_Name": 1,
-//         _id: 0
-//       }
-//     )
-//   `;
-
-//   const output = await execInContainer(docker, containerId, [
-//     "mongo",
-//     "--eval",
-//     mongoQuery
-//   ]);
-
-//   // 2) Parseia a resposta e filtra apps com configs válidas
-//   const lines = output.split("\n").filter(line => line.trim().startsWith("{"));
-  
-//   const apps = [];
-//   for (const line of lines) {
-//     try {
-//       const doc = JSON.parse(line);
-      
-//       // Verifica se tem Chat_Domain_Name (configs não vazias)
-//       if (doc.configs?.Chat_Domain_Name) {
-//         const domainName = doc.configs.Chat_Domain_Name;
-        
-//         // 3) Resolve o DNS
-//         let ipAddress = null;
-//         try {
-//           const addresses = await dns.resolve4(domainName);
-//           ipAddress = addresses[0]; // Pega o primeiro IP
-//         } catch (dnsError) {
-//           console.warn(`Erro ao resolver DNS para ${domainName}:`, dnsError.message);
-//           ipAddress = null;
-//         }
-
-//         apps.push({
-//           configs: {
-//             Chat_Domain_Uuid: doc.configs.Chat_Domain_Uuid,
-//             Chat_Domain_Name: domainName,
-//             Resolved_IP: ipAddress
-//           }
-//         });
-//       }
-//     } catch (parseError) {
-//       // Ignora linhas que não são JSON válido
-//       continue;
-//     }
-//   }
-
-//   return apps;
-// }
-
-
-
 import { promises as dns } from "dns";
 
 /**
@@ -678,55 +609,40 @@ export async function getContainerAppsConfig(docker, containerId) {
     });
   `;
 
-  console.log("🔍 Executando query no MongoDB...");
   const output = await execInContainer(docker, containerId, [
     "mongo",
     "--eval",
     mongoQuery
   ]);
 
-  console.log("📦 Output bruto do MongoDB:");
-  console.log(output);
-  console.log("---");
-
   // 2) Parseia a resposta e filtra apps com configs válidas
   const lines = output.split("\n");
-  console.log(`📊 Total de linhas recebidas: ${lines.length}`);
-  
   const apps = [];
-  let validLines = 0;
 
   for (let i = 0; i < lines.length; i++) {
     let line = lines[i].trim();
     
     // Remove caracteres inválidos (BOM e outros) até encontrar {
     line = line.replace(/^[\s\S]*?([{\[])/i, "$1");
-    
-    console.log(`Linha ${i}: "${line.substring(0, 80)}${line.length > 80 ? "..." : ""}"`);
 
     if (!line.startsWith("{")) {
-      console.log(`  ❌ Não começa com {, pulando`);
       continue;
     }
 
     try {
       const doc = JSON.parse(line);
-      validLines++;
-      console.log(`  ✓ JSON parseado:`, JSON.stringify(doc).substring(0, 100));
       
       // Verifica se tem Chat_Domain_Name (configs não vazias)
       if (doc.configs?.Chat_Domain_Name) {
         const domainName = doc.configs.Chat_Domain_Name;
-        console.log(`  ✓ Encontrado domínio: ${domainName}`);
         
         // 3) Resolve o DNS
         let ipAddress = null;
         try {
           const addresses = await dns.resolve4(domainName);
           ipAddress = addresses[0]; // Pega o primeiro IP
-          console.log(`  ✓ DNS resolvido: ${domainName} -> ${ipAddress}`);
         } catch (dnsError) {
-          console.warn(`  ⚠️ Erro ao resolver DNS para ${domainName}:`, dnsError.message);
+          console.warn(`Erro ao resolver DNS para ${domainName}:`, dnsError.message);
           ipAddress = null;
         }
 
@@ -737,16 +653,11 @@ export async function getContainerAppsConfig(docker, containerId) {
             Resolved_IP: ipAddress
           }
         });
-      } else {
-        console.log(`  ⚠️ Configs vazias ou sem Chat_Domain_Name`);
       }
     } catch (parseError) {
-      console.log(`  ❌ Erro ao parsear JSON:`, parseError.message);
       continue;
     }
   }
-
-  console.log(`\n📈 Resumo: ${validLines} linhas parseadas, ${apps.length} apps com domínio encontrados`);
 
   return apps;
 }
