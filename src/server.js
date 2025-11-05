@@ -23,7 +23,8 @@ import {
   updateDockerInstance,
   getVersionFiles,
   getVersionFilesHost,
-  updateDockerInstanceWithBackup
+  updateDockerInstanceWithBackup,
+  getContainerAppsConfig
 } from "./docker.js";
 
 const app = express();
@@ -311,6 +312,18 @@ app.post("/v1/containers/:domain/update-with-backup", auth, async (req, res) => 
       ok: false, 
       error: error.message 
     });
+  }
+});
+
+
+
+app.get("/v1/containers/:id/apps-config", auth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const apps = await getContainerAppsConfig(docker, id);
+    res.json({ items: apps });
+  } catch (e) {
+    res.status(500).json({ error: e.message || "apps_config_error" });
   }
 });
 
